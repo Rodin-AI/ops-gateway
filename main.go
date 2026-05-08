@@ -81,6 +81,7 @@ type cronJobState struct {
 	NextRunAtMs       int64  `json:"nextRunAtMs"`
 	ConsecutiveErrors int    `json:"consecutiveErrors"`
 	LastError         string `json:"lastError"`
+	RunningAtMs       int64  `json:"runningAtMs"`
 }
 
 type cronStateEntry struct {
@@ -107,14 +108,16 @@ type cronJobInfo struct {
 	NextRunIn         string `json:"nextRunIn,omitempty"`
 	ConsecutiveErrors int    `json:"consecutiveErrors"`
 	LastError         string `json:"lastError,omitempty"`
+	IsRunning         bool   `json:"isRunning"`
 }
 
 type cronSummary struct {
-	Total    int `json:"total"`
-	Enabled  int `json:"enabled"`
-	OK       int `json:"ok"`
-	Errored  int `json:"errored"`
-	Disabled int `json:"disabled"`
+	Total       int      `json:"total"`
+	Enabled     int      `json:"enabled"`
+	OK          int      `json:"ok"`
+	Errored     int      `json:"errored"`
+	Disabled    int      `json:"disabled"`
+	ErroredJobs []string `json:"erroredJobs,omitempty"`
 }
 
 type cronListResponse struct {
@@ -237,6 +240,7 @@ func readCronData() (cronListResponse, error) {
 			info.LastDurationMs = s.LastDurationMs
 			info.ConsecutiveErrors = s.ConsecutiveErrors
 			info.LastError = s.LastError
+			info.IsRunning = s.RunningAtMs > 0
 
 			if s.NextRunAtMs > 0 {
 				t := time.UnixMilli(s.NextRunAtMs)
@@ -253,6 +257,11 @@ func readCronData() (cronListResponse, error) {
 					summary.OK++
 				} else if s.LastRunStatus == "error" {
 					summary.Errored++
+					name := j.Name
+					if name == "" {
+						name = j.ID
+					}
+					summary.ErroredJobs = append(summary.ErroredJobs, name)
 				}
 			}
 		} else {
@@ -652,6 +661,7 @@ function renderCronSummary(s, el) {
 }
 
 function dotClass(job) {
+  if (job.isRunning) return 'cron-dot dot-yellow';
   if (!job.enabled) return 'cron-dot dot-gray';
   if (job.lastStatus === 'ok') return 'cron-dot dot-green';
   if (job.lastStatus === 'error') return 'cron-dot dot-red';
@@ -666,10 +676,13 @@ function renderCronJobs(jobs, container) {
   }
   let html = '';
   for (const j of jobs) {
-    const isRunning = runningJobs.has(j.id);
+    const isRunning = runningJobs.has(j.id) || j.isRunning;
     const nameClass = j.enabled ? 'cron-name' : 'cron-name disabled';
 
     let meta = '<span>' + esc(j.schedule) + '</span>';
+    if (j.isRunning) {
+      meta += '<span class="err-text" style="color:#f59e0b">running</span>';
+    }
     if (j.lastRunAgo) {
       meta += '<span>ran ' + esc(j.lastRunAgo) + ' ago</span>';
     }
